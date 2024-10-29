@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Negative Viewer</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: black;
+            overflow: hidden;
+        }
+
+        video {
+            display: none;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        #captureButton {
+            background: rgba(0, 0, 0, 0.6);
+            border: none;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        #captureButton svg {
+            width: 50px;
+            height: 50px;
+            fill: white;
+        }
+
+        #exposureControl {
+            width: 250px;
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.7);
+            height: 5px;
+            border-radius: 5px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #exposureControl::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: black;
+            cursor: pointer;
+        }
+
+        #confirmationMessage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <video autoplay playsinline></video>
+    <canvas></canvas>
+
+    <div id="controls">
+        <button id="captureButton">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="5" fill="white"/>
+                <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="white" stroke-width="2" fill="none"/>
+            </svg>
+        </button>
+        <input type="range" id="exposureControl" min="-1" max="1" step="0.1" value="0">
+    </div>
+
+    <div id="confirmationMessage">Image saved</div>
+
+    <script>
+        const video = document.querySelector('video');
+        const canvas = document.querySelector('canvas');
+        const context = canvas.getContext('2d');
+        const captureButton = document.getElementById('captureButton');
+        const exposureControl = document.getElementById('exposureControl');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+
+        // Starta kameran
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then((stream) => {
+                video.srcObject = stream;
+                video.play();
+            })
+            .catch((error) => {
+                alert('Kunde inte starta kameran: ' + error.message);
+            });
+
+        function updateCanvas() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                const brightness = 1 + parseFloat(exposureControl.value);
+                
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Hämta bilddata och använd pixelmanipulering för att applicera filter
+                let frame = context.getImageData(0, 0, canvas.width, canvas.height);
+                let data = frame.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    // Omvandla till gråskala
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+                    // Invertera gråskalan
+                    data[i] = 255 - avg;       // Röd
+                    data[i + 1] = 255 - avg;   // Grön
+                    data[i + 2] = 255 - avg;   // Blå
+
+                    // Justera ljusstyrka
+                    data[i] *= brightness;
+                    data[i + 1] *= brightness;
+                    data[i + 2] *= brightness;
+                }
+
+                context.putImageData(frame, 0, 0);
+            }
+            requestAnimationFrame(updateCanvas);
+        }
+
+        video.addEventListener('play', () => updateCanvas());
+
+        exposureControl.addEventListener('input', () => updateCanvas());
+
+        captureButton.addEventListener('click', () => {
+            const brightness = 1 + parseFloat(exposureControl.value);
+
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            let frame = context.getImageData(0, 0, canvas.width, canvas.height);
+            let data = frame.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+                data[i] = 255 - avg;
+                data[i + 1] = 255 - avg;
+                data[i + 2] = 255 - avg;
+
+                data[i] *= brightness;
+                data[i + 1] *= brightness;
+                data[i + 2] *= brightness;
+            }
+
+            context.putImageData(frame, 0, 0);
+
+            const imageDataURL = canvas.toDataURL("image/png");
+
+            const link = document.createElement('a');
+            link.href = imageDataURL;
+            link.download = 'negative_image.png';
+            link.click();
+
+            confirmationMessage.style.opacity = '0.6';
+            setTimeout(() => {
+                confirmationMessage.style.opacity = '0';
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
